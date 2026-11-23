@@ -238,6 +238,13 @@ Ulauncher opens with **Alt+Space**. That key normally opens the window menu (Mov
 
 Flameshot opens with **Ctrl+Shift+Delete** (custom shortcut *Flameshot*, command `flameshot gui`, also added by `setup.sh`). Because it's a global shortcut, browsers no longer get that key; it normally opens *Clear browsing data*. On Wayland, the first capture asks for permission to take screenshots; click **Allow**.
 
+In the capture screen, **Enter** copies the selection to the clipboard and closes. By default that's Ctrl+C, and Flameshot's "accept" action doesn't copy. Flameshot allows one key per action, so Ctrl+C no longer copies there. `setup.sh` writes this to `~/.config/flameshot/flameshot.ini`:
+
+```ini
+[Shortcuts]
+TYPE_COPY=Return
+```
+
 ### KeePassXC and Sublime Text
 
 KeePassXC comes from its PPA, because Ubuntu's repos are a minor version behind (2.7 vs 2.8). Sublime Text comes from Sublime HQ's own apt repo.

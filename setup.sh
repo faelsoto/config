@@ -309,6 +309,20 @@ fi
 # Flameshot: Ctrl+Shift+Delete opens the capture UI
 add_shortcut flameshot 'Flameshot' 'flameshot gui' '<Control><Shift>Delete'
 
+# Flameshot: Enter copies the capture to the clipboard and closes it. The default
+# copy key is Ctrl+C, and Flameshot allows one key per action. Only this key is
+# touched; the rest of the file is left alone.
+fs_ini="$HOME/.config/flameshot/flameshot.ini"
+mkdir -p "$(dirname "$fs_ini")"
+touch "$fs_ini"
+if grep -q '^TYPE_COPY=' "$fs_ini"; then
+  sed -i 's/^TYPE_COPY=.*/TYPE_COPY=Return/' "$fs_ini"
+elif grep -q '^\[Shortcuts\]' "$fs_ini"; then
+  sed -i '/^\[Shortcuts\]/a TYPE_COPY=Return' "$fs_ini"
+else
+  printf '[Shortcuts]\nTYPE_COPY=Return\n' >> "$fs_ini"
+fi
+
 # MEGAsync: MEGA's .deb for this Ubuntu version, which also adds MEGA's apt repo
 if dpkg -s megasync &>/dev/null; then
   echo "MEGAsync already installed."

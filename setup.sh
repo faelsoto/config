@@ -80,6 +80,14 @@ fi
 path_line='export PATH="$HOME/.local/bin:$PATH"'
 grep -qxF "$path_line" "$HOME/.bashrc" || echo "$path_line" >> "$HOME/.bashrc"
 
+# No desktop notifications ("Claude is waiting for your input"); other settings kept
+claude_settings="$HOME/.claude/settings.json"
+mkdir -p "$HOME/.claude"
+[[ -s $claude_settings ]] || echo '{}' > "$claude_settings"
+tmp_settings=$(mktemp)
+jq '.preferredNotifChannel = "notifications_disabled"' "$claude_settings" > "$tmp_settings"
+mv "$tmp_settings" "$claude_settings"
+
 # ---------------------------------------------------------------------------
 step "3. Remove snap (Firefox moves to Mozilla's apt repo)"
 
@@ -295,4 +303,9 @@ else
   fi
 fi
 
-step "Done. Log out and back in so fish becomes your login shell. Open MEGAsync once to log in."
+# ---------------------------------------------------------------------------
+step "9. GNOME Flashback + Compiz (X11 session)"
+sudo apt install -y gnome-session-flashback compiz compiz-gnome compiz-plugins \
+  compiz-plugins-extra compizconfig-settings-manager
+
+step "Done. Log out, then at the login screen click your name and pick \"GNOME Flashback (Compiz)\" from the gear icon (it's remembered). Open MEGAsync once to log in."

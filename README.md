@@ -1,6 +1,6 @@
 # Ubuntu setup
 
-What I do on a fresh Ubuntu install. Last done on **Ubuntu 26.04 LTS** (GNOME, Wayland).
+What I do on a fresh Ubuntu install. Last done on **Ubuntu 26.04 LTS**, using the GNOME Flashback + Compiz session (step 9).
 
 Step 0 is manual. Everything after it is automated by [`setup.sh`](setup.sh), which follows the same order and is safe to re-run:
 
@@ -41,6 +41,12 @@ Installs to `~/.local/bin/claude`. Make sure `~/.bashrc` has this line (fish get
 
 ```bash
 export PATH="$HOME/.local/bin:$PATH"
+```
+
+Turn off its desktop notifications ("Claude is waiting for your input"). The setting is `preferredNotifChannel` in `~/.claude/settings.json`, shown as *Local notifications* in `/config`:
+
+```bash
+jq '.preferredNotifChannel = "notifications_disabled"' ~/.claude/settings.json > /tmp/s.json && mv /tmp/s.json ~/.claude/settings.json
 ```
 
 ## 3. Remove snap
@@ -224,7 +230,7 @@ systemctl --user enable --now ulauncher.service       # start at login
 
 On Wayland, Ulauncher can't grab its own hotkey, so GNOME handles it instead: Settings → Keyboard → Custom Shortcuts → *Ulauncher*, command `ulauncher-toggle`, shortcut **Ctrl+Space**. `setup.sh` adds this shortcut.
 
-Flameshot opens with **Ctrl+Shift+Delete** (custom shortcut *Flameshot*, command `flameshot gui`, also added by `setup.sh`). Because it's a global shortcut, browsers no longer get that key; it normally opens *Clear browsing data*. The first capture may ask for permission to take screenshots.
+Flameshot opens with **Ctrl+Shift+Delete** (custom shortcut *Flameshot*, command `flameshot gui`, also added by `setup.sh`). Because it's a global shortcut, browsers no longer get that key; it normally opens *Clear browsing data*. On Wayland, the first capture asks for permission to take screenshots; click **Allow**.
 
 ### KeePassXC and Sublime Text
 
@@ -255,3 +261,20 @@ sudo apt install -y /tmp/megasync.deb
 ```
 
 Builds are listed at <https://mega.nz/linux/repo/>. MEGA sometimes skips non-LTS releases (there's no 25.10 build, for example). Open MEGAsync once to log in; it adds itself to autostart. Optional: `nautilus-megasync` adds sync-status icons in Files, but its build lags behind MEGAsync itself.
+
+## 9. GNOME Flashback + Compiz
+
+I like gnome-panel so I can run Compiz. On 26.04 that still works, and everything needed is in Ubuntu's repos (universe):
+
+```bash
+sudo apt install -y gnome-session-flashback compiz compiz-gnome compiz-plugins \
+  compiz-plugins-extra compizconfig-settings-manager
+```
+
+Log out, click your name on the login screen, then use the gear icon to pick **GNOME Flashback (Compiz)**. The login screen remembers the choice. Set up effects with CompizConfig Settings Manager (`ccsm`).
+
+Things to know:
+
+- **It's X11 only.** Ubuntu's own session is Wayland-only now, but the login screen can still start other X11 sessions, and Flashback is one of them. A future release could drop that support.
+- **Compiz gets no new development.** There have been no upstream releases since 0.9.14.2; Ubuntu keeps rebuilding it because Ubuntu Unity still uses it.
+- **Flashback replaces GNOME Shell**, so gnome-panel takes the place of the dock and top bar, and GNOME extensions don't run. Step 6's settings and the custom shortcuts still apply, and on X11 Ulauncher can grab its own hotkey.

@@ -27,6 +27,8 @@ Neither is installed by default. `curl` is needed for the Claude Code installer.
 ```bash
 sudo apt update
 sudo apt install -y curl git
+git config --global user.name  "Rafael Soto"
+git config --global user.email "rafael@osom.so"
 ```
 
 ## 2. Claude Code
@@ -99,10 +101,15 @@ echo 'eval "$(zoxide init bash --cmd j)"' >> ~/.bashrc                         #
 
 sudo chsh -s /usr/bin/fish "$USER"                                  # login shell, next login
 echo com.mitchellh.ghostty.desktop > ~/.config/xdg-terminals.list   # default terminal
+
+# Ghostty: new windows open in ~
+mkdir -p ~/.config/ghostty
+printf 'window-inherit-working-directory = false\nworking-directory = home\n' > ~/.config/ghostty/config.ghostty
 ```
 
 - **`j <dir>`** is [zoxide](https://github.com/ajeetdsouza/zoxide), a maintained successor to autojump. It jumps to the best match among directories you've visited, ranked by how often and how recently. It learns as you `cd`, so it starts empty. It works in both fish and bash, with one shared history. `ji` opens an interactive picker if `fzf` is installed. Note that `which j` prints nothing because `j` is a shell function, not a program on disk; use `type j` to check it.
 - **Default terminal**: Ctrl+Alt+T, Nautilus's *Open in Terminal*, and terminal apps all launch through `xdg-terminal-exec`. The user list in `~/.config` overrides Ubuntu's, which lists Ptyxis.
+- **New windows open in `~`**: by default Ghostty opens a new window in the directory of the last window you used. Tabs and splits still do that, which is usually what you want there. After changing the config, press Ctrl+Shift+, in Ghostty to reload it.
 
 ## 6. Desktop settings
 
@@ -150,7 +157,92 @@ gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-timeout 
 
 Tip: to find the key for any new tweak, run `dconf watch /`, change the setting in the Settings app, and copy the path it prints.
 
-## 7. Apps
+## 7. Dev: mise for Ruby, PHP, Node, Postgres, MySQL
+
+[mise](https://mise.jdx.dev) replaces asdf. It reads existing `.tool-versions` files as they are, so old projects keep working.
+
+| Tool | How mise installs it | Needs the build packages? |
+|---|---|---|
+| Node | prebuilt binary | no |
+| Postgres | prebuilt binary (via conda) | no |
+| MySQL | MySQL's generic binary | no (mise offers to install any missing shared libraries) |
+| Ruby | prebuilt when one exists, otherwise compiled (common for older versions) | as a fallback |
+| PHP | always compiled | yes |
+
+```bash
+# Build packages for Ruby and PHP, plus client libraries so the pg / mysql2 gems
+# build and PHP gets pdo_pgsql
+sudo apt install -y \
+  build-essential autoconf patch pkg-config bison re2c rustc \
+  libssl-dev libyaml-dev zlib1g-dev libffi-dev libgmp-dev uuid-dev \
+  libreadline-dev libncurses-dev libgdbm-dev libdb-dev \
+  libxml2-dev libicu-dev libzip-dev libonig-dev libcurl4-openssl-dev libsqlite3-dev \
+  libpng-dev libjpeg-dev libfreetype-dev libwebp-dev libsodium-dev libbz2-dev \
+  libpq-dev libmysqlclient-dev
+
+# mise from its own apt repo (key fingerprint must be 24853EC9F655CE80B48E6C3A8B81C9D17413A06D)
+sudo curl -fsSLo /etc/apt/keyrings/mise-archive-keyring.asc https://mise.jdx.dev/gpg-key.pub
+sudo tee /etc/apt/sources.list.d/mise.sources <<'EOF'
+Types: deb
+URIs: https://mise.jdx.dev/deb
+Suites: stable
+Components: main
+Signed-By: /etc/apt/keyrings/mise-archive-keyring.asc
+EOF
+sudo apt update && sudo apt install -y mise
+
+echo 'mise activate fish | source'  > ~/.config/fish/conf.d/mise.fish
+echo 'eval "$(mise activate bash)"' >> ~/.bashrc
+```
+
+No versions are installed globally; each project picks its own (for example `mise use ruby@3.4 node@22 postgres@18`). Databases run per project, the same way the old `pgup` / `mysqlup` aliases did: `initdb` + `pg_ctl start`, or `mysqld_safe --datadir=…`. With `libpq-dev` installed, the pg gem builds without the old `bundle config build.pg --with-pg-config=…`.
+
+## 8. Apps
+
+### Browsers: Google Chrome (for testing) and Brave
+
+Chromium is left out: on Ubuntu it only comes as a snap, and snapd is pinned out.
+
+```bash
+curl -fLo /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+sudo apt install -y /tmp/chrome.deb    # also adds Google's apt repo for updates
+
+sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
+sudo curl -fsSLo /etc/apt/sources.list.d/brave-browser-release.sources https://brave-browser-apt-release.s3.brave.com/brave-browser.sources
+sudo apt update && sudo apt install -y brave-browser
+```
+
+For system tests, Selenium 4.11+ downloads the matching chromedriver itself, so the old chromedriver install script isn't needed.
+
+### Ulauncher and Flameshot
+
+```bash
+sudo add-apt-repository -y ppa:agornostal/ulauncher   # Ulauncher isn't in Ubuntu's repos
+sudo apt install -y ulauncher flameshot
+systemctl --user enable --now ulauncher.service       # start at login
+```
+
+On Wayland, Ulauncher can't grab its own hotkey, so GNOME handles it instead: Settings → Keyboard → Custom Shortcuts → *Ulauncher*, command `ulauncher-toggle`, shortcut **Ctrl+Space**. `setup.sh` adds this shortcut.
+
+Flameshot opens with **Ctrl+Shift+Delete** (custom shortcut *Flameshot*, command `flameshot gui`, also added by `setup.sh`). Because it's a global shortcut, browsers no longer get that key; it normally opens *Clear browsing data*. The first capture may ask for permission to take screenshots.
+
+### KeePassXC and Sublime Text
+
+KeePassXC comes from its PPA, because Ubuntu's repos are a minor version behind (2.7 vs 2.8). Sublime Text comes from Sublime HQ's own apt repo.
+
+```bash
+sudo add-apt-repository -y ppa:phoerious/keepassxc
+
+# Sublime's key fingerprint must be 1EDDE2CDFC025D17F6DA9EC0ADAE6AD28A8F901A
+sudo curl -fsSLo /etc/apt/keyrings/sublimehq-pub.asc https://download.sublimetext.com/sublimehq-pub.gpg
+sudo tee /etc/apt/sources.list.d/sublime-text.sources <<'EOF'
+Types: deb
+URIs: https://download.sublimetext.com/
+Suites: apt/stable/
+Signed-By: /etc/apt/keyrings/sublimehq-pub.asc
+EOF
+sudo apt update && sudo apt install -y keepassxc sublime-text
+```
 
 ### MEGAsync
 

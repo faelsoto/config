@@ -88,6 +88,9 @@ tmp_settings=$(mktemp)
 jq '.preferredNotifChannel = "notifications_disabled"' "$claude_settings" > "$tmp_settings"
 mv "$tmp_settings" "$claude_settings"
 
+# Claude Code reads clipboard images through xclip (X11) or wl-paste (Wayland)
+sudo apt install -y xclip wl-clipboard
+
 # ---------------------------------------------------------------------------
 step "3. Remove snap (Firefox moves to Mozilla's apt repo)"
 
@@ -282,10 +285,26 @@ EOF
 sudo apt update
 sudo apt install -y brave-browser ulauncher flameshot keepassxc sublime-text
 
-# Ulauncher: start at login. On Wayland it can't grab its own hotkey, so GNOME
-# owns it and runs ulauncher-toggle.
+# Ulauncher on Alt+Space. Alt+Space normally opens the window menu, so unbind that
+# first (here for the GNOME session; Compiz's copy is unbound in step 9). On Wayland
+# Ulauncher can't grab keys itself, so a GNOME shortcut runs ulauncher-toggle; on
+# X11 Ulauncher's own hotkey works too. Whichever grabs the key first wins, and both
+# open Ulauncher.
+gsettings set org.gnome.desktop.wm.keybindings activate-window-menu "[]"
 systemctl --user enable --now ulauncher.service
-add_shortcut ulauncher 'Ulauncher' 'ulauncher-toggle' '<Control>space'
+add_shortcut ulauncher 'Ulauncher' 'ulauncher-toggle' '<Alt>space'
+# Ulauncher writes settings.json with all its defaults on first start and doesn't
+# merge a partial file, so wait for that file, then change only the hotkey.
+ul_settings="$HOME/.config/ulauncher/settings.json"
+for _ in $(seq 15); do [[ -s $ul_settings ]] && break; sleep 1; done
+if [[ -s $ul_settings ]]; then
+  tmp_ul=$(mktemp)
+  jq '.["hotkey-show-app"] = "<Alt>space"' "$ul_settings" > "$tmp_ul"
+  mv "$tmp_ul" "$ul_settings"
+  systemctl --user restart ulauncher.service
+else
+  echo "Ulauncher hasn't written its settings yet; set its hotkey to Alt+Space in its preferences." >&2
+fi
 
 # Flameshot: Ctrl+Shift+Delete opens the capture UI
 add_shortcut flameshot 'Flameshot' 'flameshot gui' '<Control><Shift>Delete'
@@ -307,5 +326,37 @@ fi
 step "9. GNOME Flashback + Compiz (X11 session)"
 sudo apt install -y gnome-session-flashback compiz compiz-gnome compiz-plugins \
   compiz-plugins-extra compizconfig-settings-manager
+
+# Flashback falls back to GNOME's dark wallpaper (adwaita-d.jxl), which Ubuntu
+# doesn't ship. With no image the desktop draws nothing, so Compiz shows black and
+# leaves window trails. Use whatever the Ubuntu session's wallpaper is on this
+# release, for every session. If those files are missing, use a solid color,
+# which needs no file.
+bg=org.gnome.desktop.background
+for key in picture-uri picture-uri-dark; do
+  uri=$(XDG_CURRENT_DESKTOP=ubuntu:GNOME GSETTINGS_BACKEND=memory gsettings get "$bg" "$key" | tr -d "'")
+  if [[ -f ${uri#file://} ]]; then
+    gsettings set "$bg" "$key" "$uri"
+  else
+    echo "Ubuntu's wallpaper ($uri) is missing; using a solid background color instead." >&2
+    gsettings set "$bg" picture-options 'none'
+  fi
+done
+
+# Alt+Space belongs to Ulauncher (step 8): unbind Compiz's window menu from it
+gsettings set org.compiz.core:/org/compiz/profiles/gnome-flashback/plugins/core/ window-menu-key 'Disabled'
+
+# Panel icons: the session indicator (far right) asks for ubuntu-mono's
+# system-*-panel icons. Yaru doesn't have them, so it falls back to a full-color
+# monitor icon. Link them into the panel folders Yaru's index already lists. Only
+# the panel asks for these names, so the GNOME session is unaffected.
+icon_theme=$(gsettings get org.gnome.desktop.interface icon-theme | tr -d "'")
+for size in 16 22; do
+  dest="$HOME/.local/share/icons/$icon_theme/${size}x${size}/panel"
+  mkdir -p "$dest"
+  for f in /usr/share/icons/ubuntu-mono-dark/{status,actions}/"$size"/system-{devices,shutdown,restart}-panel*.svg; do
+    [[ -e $f ]] && ln -sfn "$f" "$dest/"
+  done
+done
 
 step "Done. Log out, then at the login screen click your name and pick \"GNOME Flashback (Compiz)\" from the gear icon (it's remembered). Open MEGAsync once to log in."

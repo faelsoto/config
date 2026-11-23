@@ -49,6 +49,12 @@ Turn off its desktop notifications ("Claude is waiting for your input"). The set
 jq '.preferredNotifChannel = "notifications_disabled"' ~/.claude/settings.json > /tmp/s.json && mv /tmp/s.json ~/.claude/settings.json
 ```
 
+To paste images (like screenshots) into Claude Code, install the clipboard tools it uses, `xclip` on X11 and `wl-paste` on Wayland:
+
+```bash
+sudo apt install -y xclip wl-clipboard
+```
+
 ## 3. Remove snap
 
 Removes snapd and every snap, and pins apt so snapd never comes back. What that changes:
@@ -228,7 +234,7 @@ sudo apt install -y ulauncher flameshot
 systemctl --user enable --now ulauncher.service       # start at login
 ```
 
-On Wayland, Ulauncher can't grab its own hotkey, so GNOME handles it instead: Settings → Keyboard → Custom Shortcuts → *Ulauncher*, command `ulauncher-toggle`, shortcut **Ctrl+Space**. `setup.sh` adds this shortcut.
+Ulauncher opens with **Alt+Space**. That key normally opens the window menu (Move, Resize, Close…), so the setup unbinds it there first: `activate-window-menu` in GNOME, and `window-menu-key` in Compiz (step 9). On Wayland, Ulauncher can't grab its own hotkey, so a GNOME custom shortcut (*Ulauncher*, command `ulauncher-toggle`) handles it. On X11, Ulauncher's own hotkey (`hotkey-show-app` in `~/.config/ulauncher/settings.json`) works too. Whichever program grabs the key first wins, and both open Ulauncher. `setup.sh` sets all of this.
 
 Flameshot opens with **Ctrl+Shift+Delete** (custom shortcut *Flameshot*, command `flameshot gui`, also added by `setup.sh`). Because it's a global shortcut, browsers no longer get that key; it normally opens *Clear browsing data*. On Wayland, the first capture asks for permission to take screenshots; click **Allow**.
 
@@ -269,12 +275,22 @@ I like gnome-panel so I can run Compiz. On 26.04 that still works, and everythin
 ```bash
 sudo apt install -y gnome-session-flashback compiz compiz-gnome compiz-plugins \
   compiz-plugins-extra compizconfig-settings-manager
+
+# Use the Ubuntu session's wallpaper everywhere (see "Black desktop" below).
+# On 26.04 these are warty-final-ubuntu.png and ubuntu-wallpaper-d.png.
+for k in picture-uri picture-uri-dark; do
+  gsettings set org.gnome.desktop.background $k "$(XDG_CURRENT_DESKTOP=ubuntu:GNOME GSETTINGS_BACKEND=memory gsettings get org.gnome.desktop.background $k)"
+done
 ```
+
+If those files are ever missing, `setup.sh` switches to a plain background color (`picture-options 'none'`). A solid color needs no image file, so the bug can't come back.
 
 Log out, click your name on the login screen, then use the gear icon to pick **GNOME Flashback (Compiz)**. The login screen remembers the choice. Set up effects with CompizConfig Settings Manager (`ccsm`).
 
 Things to know:
 
+- **Black desktop and window trails** mean the wallpaper is missing. Ubuntu sets its wallpaper only for its own session, so Flashback falls back to GNOME's default, `adwaita-d.jxl`, which isn't installed. With no image, the desktop draws nothing and Compiz keeps showing old frames. Setting the wallpaper explicitly (above) fixes it.
+- **A full-color monitor icon at the far right of the panel** is the session indicator (log out, shut down). It asks for ubuntu-mono's `system-*-panel` icons, which Yaru doesn't have. `setup.sh` links them into the panel folders that Yaru's theme index lists, under `~/.local/share/icons/<theme>/`, which gives a flat panel icon. The battery icon next to it is the UPS.
 - **It's X11 only.** Ubuntu's own session is Wayland-only now, but the login screen can still start other X11 sessions, and Flashback is one of them. A future release could drop that support.
 - **Compiz gets no new development.** There have been no upstream releases since 0.9.14.2; Ubuntu keeps rebuilding it because Ubuntu Unity still uses it.
 - **Flashback replaces GNOME Shell**, so gnome-panel takes the place of the dock and top bar, and GNOME extensions don't run. Step 6's settings and the custom shortcuts still apply, and on X11 Ulauncher can grab its own hotkey.

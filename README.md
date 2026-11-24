@@ -130,6 +130,7 @@ printf 'Package: snapd\nPin: release a=*\nPin-Priority: -10\n' | sudo tee /etc/a
 | Don't offer to save passwords (KeePassXC handles them) | `OfferToSaveLoginsDefault: false` (`signon.rememberSignons`). Already saved logins stay and still autofill |
 | No spell checker | `layout.spellcheckDefault` = 0 |
 | A plain tooltip when hovering a tab, not the big preview card | `browser.tabs.hoverPreview.enabled` = false |
+| The address bar always shows the full URL, `https://` included | `browser.urlbar.trimURLs` = false. It's the master switch: with it off Firefox trims nothing, whatever `trimHttps` or Mozilla's experiments say |
 | Kagi as the default search engine | `SearchEngines`: add Kagi, make it `Default` |
 
 Kagi's URLs come from its OpenSearch file (`https://kagi.com/opensearch.xml`): results from `https://kagi.com/search?q={searchTerms}`, suggestions from `https://kagisuggest.com/api/autosuggest?q={searchTerms}`. Searches only work while you're signed in to Kagi in Firefox.
@@ -158,7 +159,7 @@ echo 'eval "$(zoxide init bash --cmd j)"' >> ~/.bashrc                         #
 
 # Aliases and small functions, one file per shell with the same list (Ubuntu's
 # .bashrc loads ~/.bash_aliases). setup.sh (step 5) writes both: aliases for uu,
-# ai, opn, s, rt, rtt; functions for cc, pgup, pgdn and gitg.
+# ai, opn, s, rt; functions for cc, rtt, pgup, pgdn and gitg.
 
 sudo chsh -s /usr/bin/fish "$USER"                                  # login shell, next login
 echo com.mitchellh.ghostty.desktop > ~/.config/xdg-terminals.list   # default terminal
@@ -179,8 +180,8 @@ printf 'window-inherit-working-directory = false\nworking-directory = home\nkeyb
   | `opn` | `xdg-open .`: open the current folder in Files |
   | `s` | `subl .`: open the current folder in Sublime Text |
   | `pgup` / `pgdn` | Start / stop the local Postgres, through the systemd user service `postgresql@<major>` (step 7). Each major version has its own data folder, `~/.local/share/postgres/<major>`, because a data folder only opens with the major version that created it. `pgup` starts the version of the project you're in (mise's `pg_ctl` tells which) and returns once Postgres accepts connections. If a server is already running it says so: "already running" for the same version, "run pgdn first" for another one, since all versions use port 5432. `pgdn` works from any folder: it finds the running server (`postmaster.pid` whose process is alive), reads its version from `PG_VERSION` and stops that service; a server started outside the service gets a fast `pg_ctl stop` with its own version's `pg_ctl`. Logs: `journalctl --user -u postgresql@17`. The first time a major version is used, `pgup` asks whether to create its data folder (`initdb --encoding=UTF8 --locale=C.UTF-8 --auth=trust`) and then starts it |
-  | `rt` | `rails test`; arguments pass through, e.g. `rt test/models/user_test.rb:42` |
-  | `rtt` | `env HEADLESS=no rails test`: system tests in a visible browser, in apps whose `application_system_test_case.rb` reads `HEADLESS` |
+  | `rt` | `rails test -d`; arguments pass through, e.g. `rt test/models/user_test.rb:42`. `-d` (`--defer-output`) prints failures and errors after the run instead of in between the progress dots |
+  | `rtt` | `env HEADLESS=no rails test -d` for exactly one test: it takes a single `path/file.rb:LINE` (e.g. `rtt test/system/login_test.rb:42`) and refuses anything else, so a whole suite never runs in a visible browser. The browser only shows in apps whose `application_system_test_case.rb` reads `HEADLESS` |
   | `gitg` | `setsid -f gitg …`: gitg detached from the terminal. The prompt comes back at once, closing the terminal doesn't close gitg, and its log output is dropped. It's a function, not an alias, so the output can be redirected after the arguments |
 
   `claude --continue` exits with "No conversation found to continue" when the folder has none, so `cc` falls back to plain `claude`. The fallback also runs if a continued session itself exits with an error. `cc` hides the C compiler only when you type it yourself; `make` and scripts still find `/usr/bin/cc`.
@@ -276,6 +277,7 @@ sudo apt install -y \
   libxml2-dev libicu-dev libzip-dev libonig-dev libcurl4-openssl-dev libsqlite3-dev \
   libpng-dev libjpeg-dev libfreetype-dev libwebp-dev libsodium-dev libbz2-dev \
   libpq-dev libmysqlclient-dev
+sudo apt install -y imagemagick   # convert / magick
 
 # mise from its own apt repo (key fingerprint must be 24853EC9F655CE80B48E6C3A8B81C9D17413A06D)
 sudo curl -fsSLo /etc/apt/keyrings/mise-archive-keyring.asc https://mise.jdx.dev/gpg-key.pub
@@ -357,6 +359,18 @@ Signed-By: /etc/apt/keyrings/sublimehq-pub.asc
 EOF
 sudo apt update && sudo apt install -y keepassxc sublime-text
 ```
+
+**Sublime key bindings** go in `~/.config/sublime-text/Packages/User/Default (Linux).sublime-keymap` (Preferences → Key Bindings), the same ones as my old setup:
+
+| Keys | Does |
+|---|---|
+| Ctrl+Tab / Ctrl+Shift+Tab | next / previous tab, in tab order |
+| Ctrl+PgUp / Ctrl+PgDn, also with Shift | next / previous tab |
+| Ctrl+T | Goto Anything with files (Sublime's Ctrl+P) |
+| Ctrl+Shift+7 | toggle line comment: Ctrl+/ on the Latin American layout, where `/` is Shift+7 |
+| Ctrl+K Ctrl+K | JsPrettier. It's a package, so the chord does nothing until JsPrettier is installed, and it replaces Sublime's default (delete to end of line) |
+| Ctrl+I | autocomplete |
+| Ctrl+Shift+] / Ctrl+Shift+[ | indent / unindent |
 
 ### gitg
 

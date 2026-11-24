@@ -223,7 +223,7 @@ gsettings set org.gnome.shell favorite-apps "$favs"
 #     stories or address-bar suggestions; no New Tab widgets or weather; a separate
 #     search bar next to the address bar; restore the previous session; no
 #     translation, no offer to save passwords, no spell checker, plain tab
-#     tooltips instead of the big hover preview; Kagi as the
+#     tooltips instead of the big hover preview, full URLs with http(s)://; Kagi as the
 #     default search engine. Firefox removes the search bar after 120 days unused,
 #     so that limit goes to 100 years. Widgets: the master switch alone isn't
 #     enough, because Mozilla's remote New Tab config can override it, so every
@@ -268,7 +268,8 @@ sudo tee /etc/firefox/policies/policies.json >/dev/null <<'EOF'
     "Preferences": {
       "browser.search.widget.removeAfterDaysUnused": { "Value": 36500, "Status": "default" },
       "layout.spellcheckDefault": { "Value": 0, "Status": "default" },
-      "browser.tabs.hoverPreview.enabled": { "Value": false, "Status": "default" }
+      "browser.tabs.hoverPreview.enabled": { "Value": false, "Status": "default" },
+      "browser.urlbar.trimURLs": { "Value": false, "Status": "default" }
     }
   }
 }
@@ -309,8 +310,22 @@ alias uu 'sudo apt update && sudo apt upgrade'
 alias ai 'sudo apt install'
 alias opn 'xdg-open .'
 alias s 'subl .'
-alias rt 'rails test'
-alias rtt 'env HEADLESS=no rails test'
+alias rt 'rails test -d'
+
+# rtt: one test in a visible browser (HEADLESS=no). It takes exactly one
+# path/file.rb:LINE, so it can't start a whole suite with a browser window.
+function rtt --description 'One test in a visible browser: rtt test/system/foo_test.rb:42'
+    if test (count $argv) -ne 1; or not string match -qr '^.+\.rb:\d+$' -- $argv[1]
+        echo "usage: rtt path/to/file_test.rb:LINE (one test only)" >&2
+        return 1
+    end
+    set -l file (string replace -r ':\d+$' '' -- $argv[1])
+    if not test -f $file
+        echo "rtt: no such file: $file" >&2
+        return 1
+    end
+    env HEADLESS=no rails test -d $argv[1]
+end
 
 # cc: continue this folder's last Claude Code conversation, or start a new one
 # (claude --continue exits with an error when there's nothing to continue)
@@ -390,8 +405,17 @@ alias uu='sudo apt update && sudo apt upgrade'
 alias ai='sudo apt install'
 alias opn='xdg-open .'
 alias s='subl .'
-alias rt='rails test'
-alias rtt='env HEADLESS=no rails test'
+alias rt='rails test -d'
+
+# rtt: one test in a visible browser; takes exactly one path/file.rb:LINE
+rtt() {
+  if [[ $# -ne 1 || ! $1 =~ ^.+\.rb:[0-9]+$ ]]; then
+    echo "usage: rtt path/to/file_test.rb:LINE (one test only)" >&2
+    return 1
+  fi
+  [[ -f ${1%:*} ]] || { echo "rtt: no such file: ${1%:*}" >&2; return 1; }
+  env HEADLESS=no rails test -d "$1"
+}
 
 # cc: continue this folder's last Claude Code conversation, or start a new one
 cc() { command claude --continue "$@" || command claude "$@"; }
@@ -538,6 +562,10 @@ apt_install \
   libpng-dev libjpeg-dev libfreetype-dev libwebp-dev libsodium-dev libbz2-dev \
   libpq-dev libmysqlclient-dev
 
+# ImageMagick 7 (magick, plus the old convert / identify / mogrify names), for
+# image processing in apps
+apt_install imagemagick
+
 # mise, from its own apt repo (Ubuntu doesn't package it)
 install_apt_key https://mise.jdx.dev/gpg-key.pub \
   /etc/apt/keyrings/mise-archive-keyring.asc 24853EC9F655CE80B48E6C3A8B81C9D17413A06D
@@ -642,6 +670,29 @@ EOF
 
 sudo apt update
 apt_install brave-browser ulauncher flameshot keepassxc sublime-text gitg
+
+# Sublime Text key bindings (user keymap). Ctrl+Shift+7 is Ctrl+/ on the Latin
+# American layout, so it reaches toggle_comment. Ctrl+K Ctrl+K runs JsPrettier,
+# which is a package: until it's installed that chord does nothing (it replaces
+# Sublime's default, delete to end of line).
+mkdir -p "$HOME/.config/sublime-text/Packages/User"
+cat > "$HOME/.config/sublime-text/Packages/User/Default (Linux).sublime-keymap" <<'EOF'
+// Written by setup.sh (step 8). Key bindings from my old setup.
+[
+    { "keys": ["ctrl+tab"], "command": "next_view" },
+    { "keys": ["ctrl+shift+tab"], "command": "prev_view" },
+    { "keys": ["ctrl+pageup"], "command": "next_view" },
+    { "keys": ["ctrl+pagedown"], "command": "prev_view" },
+    { "keys": ["ctrl+shift+pageup"], "command": "next_view" },
+    { "keys": ["ctrl+shift+pagedown"], "command": "prev_view" },
+    { "keys": ["ctrl+t"], "command": "show_overlay", "args": {"overlay": "goto", "show_files": true} },
+    { "keys": ["ctrl+shift+7"], "command": "toggle_comment", "args": { "block": false } },
+    { "keys": ["ctrl+k", "ctrl+k"], "command": "js_prettier" },
+    { "keys": ["ctrl+i"], "command": "auto_complete" },
+    { "keys": ["ctrl+shift+]"], "command": "indent" },
+    { "keys": ["ctrl+shift+["], "command": "unindent" }
+]
+EOF
 # Without recommends: OnlyOffice recommends ttf-mscorefonts-installer, which stops
 # for Microsoft's license prompt and downloads from SourceForge (a failed download
 # fails the install). The fonts it does require include metric-compatible stand-ins

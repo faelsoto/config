@@ -8,7 +8,7 @@ Step 0 is manual. Everything after it is automated by [`setup.sh`](setup.sh), wh
 ./setup.sh   # run as your normal user, from a terminal in the desktop session
 ```
 
-If Firefox is open, the script pauses until you close it, because step 3 copies its profile. If any step fails, the script stops and prints which step. Log out and back in when it finishes, so fish becomes the login shell.
+Re-running never upgrades anything: packages that are already installed are skipped (`apt install` on an installed package upgrades it when there's a newer version; upgrading is `uu`'s job). If Firefox is open, the script pauses until you close it, because step 3 copies its profile. If any step fails, the script stops and prints which step. Log out and back in when it finishes, so fish becomes the login shell.
 
 > Keep this file and `setup.sh` in sync when adding a step.
 
@@ -40,7 +40,21 @@ git config --global push.default current
 git config --global rebase.autoStash true
 ```
 
-`git su` points the current branch at the branch of the same name on origin. From the old setup, `color.ui true` is left out because it's been git's default since 1.8.4, and `pull.default` because it isn't a git setting.
+### .localignore: keep local-only changes out of commits
+
+A global pre-commit hook, `~/.githooks/pre-commit`, reads `.localignore` at the repo root and unstages every path it lists. The commit goes ahead without them and the changes stay in the working tree: edits to tracked files stay modified, new files go back to untracked. One path per line, relative to the repo root; each line is a git pathspec, so folders (`notes/`) and globs (`*.local.md`) work, and a leading `#` switches a line off. `.localignore` itself is kept out of every repo by the global excludes file.
+
+```bash
+mkdir -p ~/.githooks   # then save the hook from setup.sh (step 1) as ~/.githooks/pre-commit
+chmod +x ~/.githooks/pre-commit
+git config --global core.hooksPath ~/.githooks
+git config --global core.excludesFile ~/.gitignore_global
+echo .localignore >> ~/.gitignore_global
+```
+
+With a global hooks path, a repo's own `.git/hooks` stop running (none of the repos in `~/www` had any). A repo that sets its own `core.hooksPath` (husky does) skips this hook, and so does `git commit --no-verify`.
+
+`git su` points the current branch at the branch of the same name on origin. In fish, `git co` <Tab> offers branch names only (step 5); `git checkout` still completes everything. From the old setup, `color.ui true` is left out because it's been git's default since 1.8.4, and `pull.default` because it isn't a git setting.
 
 ## 2. Claude Code
 
@@ -100,6 +114,26 @@ rm -rf ~/snap && sudo rm -rf /snap /var/snap /var/lib/snapd /var/cache/snapd
 printf 'Package: snapd\nPin: release a=*\nPin-Priority: -10\n' | sudo tee /etc/apt/preferences.d/no-snap.pref
 ```
 
+### Firefox settings
+
+`setup.sh` writes them as an enterprise policy, `/etc/firefox/policies/policies.json`. Firefox reads it at startup, so restart Firefox after changing it. It works on a fresh install before any profile exists, and the policies only set defaults, so everything except translation can still be changed in Settings. `about:policies` shows what's active.
+
+| Setting | Policy |
+|---|---|
+| No sponsored shortcuts or stories on the New Tab page | `FirefoxHome`: `SponsoredTopSites`, `SponsoredStories` off |
+| No sponsored suggestions in the address bar | `FirefoxSuggest`: `SponsoredSuggestions` off |
+| No New Tab widgets (lists, timer, clocks…) or weather | `FirefoxHome`: `Widgets.Enabled` and `Weather` off, plus every widget in `Widgets.Blocked`. The master switch alone isn't enough: New Tab updates itself apart from Firefox (`extensions/newtab@mozilla.org.xpi` in the profile), and Mozilla's remote config for it can turn widgets back on. Blocking locks each widget's own pref off, and unknown names are ignored |
+| A separate search bar next to the address bar | `SearchBar: "separate"` |
+| Keep that search bar | `browser.search.widget.removeAfterDaysUnused` = 36500. Firefox removes the search bar after 120 days unused; 0 would remove it at once |
+| Open the previous windows and tabs at startup | `Homepage.StartPage: "previous-session"` |
+| No page translation | `TranslateEnabled: false`. This one is locked, so Settings can't turn it back on |
+| Don't offer to save passwords (KeePassXC handles them) | `OfferToSaveLoginsDefault: false` (`signon.rememberSignons`). Already saved logins stay and still autofill |
+| No spell checker | `layout.spellcheckDefault` = 0 |
+| A plain tooltip when hovering a tab, not the big preview card | `browser.tabs.hoverPreview.enabled` = false |
+| Kagi as the default search engine | `SearchEngines`: add Kagi, make it `Default` |
+
+Kagi's URLs come from its OpenSearch file (`https://kagi.com/opensearch.xml`): results from `https://kagi.com/search?q={searchTerms}`, suggestions from `https://kagisuggest.com/api/autosuggest?q={searchTerms}`. Searches only work while you're signed in to Kagi in Firefox.
+
 ## 4. Ubuntu Pro: silence apt
 
 ```bash
@@ -122,16 +156,16 @@ echo 'fish_add_path ~/.local/bin'        > ~/.config/fish/conf.d/path.fish     #
 echo 'zoxide init fish --cmd j | source' > ~/.config/fish/conf.d/zoxide.fish   # j <dir>
 echo 'eval "$(zoxide init bash --cmd j)"' >> ~/.bashrc                         # j in bash too
 
-# Aliases, one list per shell (Ubuntu's .bashrc loads ~/.bash_aliases)
-printf "alias cc 'claude --continue'\nalias uu 'sudo apt update && sudo apt upgrade'\nalias ai 'sudo apt install'\nalias opn 'xdg-open .'\n" > ~/.config/fish/conf.d/aliases.fish
-printf "alias cc='claude --continue'\nalias uu='sudo apt update && sudo apt upgrade'\nalias ai='sudo apt install'\nalias opn='xdg-open .'\n" > ~/.bash_aliases
+# Aliases and small functions, one file per shell with the same list (Ubuntu's
+# .bashrc loads ~/.bash_aliases). setup.sh (step 5) writes both: aliases for uu,
+# ai, opn, s, rt, rtt; functions for cc, pgup, pgdn and gitg.
 
 sudo chsh -s /usr/bin/fish "$USER"                                  # login shell, next login
 echo com.mitchellh.ghostty.desktop > ~/.config/xdg-terminals.list   # default terminal
 
 # Ghostty: new windows open in ~
 mkdir -p ~/.config/ghostty
-printf 'window-inherit-working-directory = false\nworking-directory = home\n' > ~/.config/ghostty/config.ghostty
+printf 'window-inherit-working-directory = false\nworking-directory = home\nkeybind = super+shift+k=clear_screen\n' > ~/.config/ghostty/config.ghostty
 ```
 
 - **`j <dir>`** is [zoxide](https://github.com/ajeetdsouza/zoxide), a maintained successor to autojump. It jumps to the best match among directories you've visited, ranked by how often and how recently. It learns as you `cd`, so it starts empty. It works in both fish and bash, with one shared history. `ji` opens an interactive picker if `fzf` is installed. Note that `which j` prints nothing because `j` is a shell function, not a program on disk; use `type j` to check it.
@@ -139,14 +173,21 @@ printf 'window-inherit-working-directory = false\nworking-directory = home\n' > 
 
   | Alias | Runs |
   |---|---|
-  | `cc` | `claude --continue`: continue the last Claude Code conversation in this folder |
+  | `cc` | `claude --continue`, or plain `claude` when that fails (there's no conversation to continue in this folder) |
   | `uu` | `sudo apt update && sudo apt upgrade` |
   | `ai` | `sudo apt install` |
   | `opn` | `xdg-open .`: open the current folder in Files |
+  | `s` | `subl .`: open the current folder in Sublime Text |
+  | `pgup` / `pgdn` | Start / stop the local Postgres, through the systemd user service `postgresql@<major>` (step 7). Each major version has its own data folder, `~/.local/share/postgres/<major>`, because a data folder only opens with the major version that created it. `pgup` starts the version of the project you're in (mise's `pg_ctl` tells which) and returns once Postgres accepts connections. If a server is already running it says so: "already running" for the same version, "run pgdn first" for another one, since all versions use port 5432. `pgdn` works from any folder: it finds the running server (`postmaster.pid` whose process is alive), reads its version from `PG_VERSION` and stops that service; a server started outside the service gets a fast `pg_ctl stop` with its own version's `pg_ctl`. Logs: `journalctl --user -u postgresql@17`. The first time a major version is used, `pgup` asks whether to create its data folder (`initdb --encoding=UTF8 --locale=C.UTF-8 --auth=trust`) and then starts it |
+  | `rt` | `rails test`; arguments pass through, e.g. `rt test/models/user_test.rb:42` |
+  | `rtt` | `env HEADLESS=no rails test`: system tests in a visible browser, in apps whose `application_system_test_case.rb` reads `HEADLESS` |
+  | `gitg` | `setsid -f gitg …`: gitg detached from the terminal. The prompt comes back at once, closing the terminal doesn't close gitg, and its log output is dropped. It's a function, not an alias, so the output can be redirected after the arguments |
 
-  When there's nothing to continue, `claude --continue` starts a new session by itself, so `cc` needs no fallback. I checked that in both interactive and print mode. A fallback written as `claude --continue || claude` would also start a second session whenever a normal session exits with an error. `cc` hides the C compiler only when you type it yourself; `make` and scripts still find `/usr/bin/cc`.
+  `claude --continue` exits with "No conversation found to continue" when the folder has none, so `cc` falls back to plain `claude`. The fallback also runs if a continued session itself exits with an error. `cc` hides the C compiler only when you type it yourself; `make` and scripts still find `/usr/bin/cc`.
+- **`git co` completes branches only.** Fish completes a git alias like the command it stands for, so `git co` <Tab> would also offer changed files, tags and recent commits. `~/.config/fish/completions/git.fish` loads fish's own git completions, then removes the `co` → checkout mapping (`set -e __fish_git_alias_co`) and gives `co` the local branches plus the remote branches checkout can track by name. `origin/HEAD` is left out.
 - **Default terminal**: Ctrl+Alt+T, Nautilus's *Open in Terminal*, and terminal apps all launch through `xdg-terminal-exec`. The user list in `~/.config` overrides Ubuntu's, which lists Ptyxis.
 - **New windows open in `~`**: by default Ghostty opens a new window in the directory of the last window you used. Tabs and splits still do that, which is usually what you want there. After changing the config, press Ctrl+Shift+, in Ghostty to reload it.
+- **Super+Shift+K clears the terminal**, screen and scrollback (Ghostty's `clear_screen`, which has no default key on Linux).
 
 ## 6. Desktop settings
 
@@ -251,7 +292,9 @@ echo 'mise activate fish | source'  > ~/.config/fish/conf.d/mise.fish
 echo 'eval "$(mise activate bash)"' >> ~/.bashrc
 ```
 
-No versions are installed globally; each project picks its own (for example `mise use ruby@3.4 node@22 postgres@18`). Databases run per project, the same way the old `pgup` / `mysqlup` aliases did: `initdb` + `pg_ctl start`, or `mysqld_safe --datadir=…`. With `libpq-dev` installed, the pg gem builds without the old `bundle config build.pg --with-pg-config=…`.
+No versions are installed globally; each project picks its own (for example `mise use ruby@3.4 node@22 postgres@18`). Postgres runs with `pgup` / `pgdn` (step 5), one data folder per major version; MySQL the old way, `mysqld_safe --datadir=…`.
+
+**Postgres as a systemd user service.** `setup.sh` writes the template unit `~/.config/systemd/user/postgresql@.service`; `postgresql@17` runs mise's newest installed 17.x on `~/.local/share/postgres/17`. Started from a terminal with `pg_ctl`, Postgres stays in that terminal's systemd scope. At power-off systemd sends SIGTERM to every process in it at once and kills what's left after 90 seconds, so Postgres often doesn't shut down cleanly and the next start runs crash recovery. The unit follows the PostgreSQL docs for systemd: `KillMode=mixed` with `KillSignal=SIGINT` sends a fast shutdown to the main process only, which disconnects clients and stops its own background processes in order, and systemd stops it the same way at power-off. `ExecStartPost` waits for `pg_isready`, so `systemctl --user start` (and `pgup`) return only once Postgres accepts connections, recovery included. It starts only through `pgup`; `systemctl --user enable postgresql@17` would start it at login. A power cut or hard reset still triggers recovery, which is normal and safe. With `libpq-dev` installed, the pg gem builds without the old `bundle config build.pg --with-pg-config=…`. `bundle` on its own keeps meaning `bundle install`: `setup.sh` sets Bundler's `default_cli_command` to `install` in `~/.bundle/config` (`BUNDLE_DEFAULT_CLI_COMMAND: "install"`), which also stops the "In a future version of Bundler…" notice. It's a plain YAML file, so it's written before any Ruby is installed.
 
 ## 8. Apps
 
@@ -314,6 +357,10 @@ Signed-By: /etc/apt/keyrings/sublimehq-pub.asc
 EOF
 sudo apt update && sudo apt install -y keepassxc sublime-text
 ```
+
+### gitg
+
+A GUI for browsing a repo's history, from Ubuntu's repos: `sudo apt install -y gitg`. Run `gitg` inside a repo; the shell function in step 5 runs it detached from the terminal.
 
 ### Steam and Slack
 

@@ -191,12 +191,14 @@ cat > "$HOME/.config/fish/conf.d/aliases.fish" <<'EOF'
 alias cc 'claude --continue'
 alias uu 'sudo apt update && sudo apt upgrade'
 alias ai 'sudo apt install'
+alias opn 'xdg-open .'
 EOF
 cat > "$HOME/.bash_aliases" <<'EOF'
 # Written by setup.sh. Same list as ~/.config/fish/conf.d/aliases.fish.
 alias cc='claude --continue'
 alias uu='sudo apt update && sudo apt upgrade'
 alias ai='sudo apt install'
+alias opn='xdg-open .'
 EOF
 
 if [[ $(getent passwd "$USER" | cut -d: -f7) != /usr/bin/fish ]]; then
@@ -234,6 +236,17 @@ add_shortcut block-ctrl-q 'Block Ctrl+Q' 'true' '<Control>q'
 
 # Super+E opens Files
 add_shortcut files 'Files' 'nautilus --new-window' '<Super>e'
+
+# Volume keys: Super+Delete up, Super+Insert down, Super+F1 mic mute. Super+F1 was
+# Help's shortcut, so unbind that first.
+media_keys=org.gnome.settings-daemon.plugins.media-keys
+gsettings set "$media_keys" help "[]"
+gsettings set "$media_keys" volume-up "['<Super>Delete']"
+gsettings set "$media_keys" volume-down "['<Super>Insert']"
+gsettings set "$media_keys" mic-mute "['<Super>F1']"
+
+# Super+F4 plays/pauses whatever is playing
+gsettings set "$media_keys" play "['<Super>F4']"
 
 # Night Light, for the Ubuntu (GNOME Shell) session; Flashback uses gammastep
 # (step 9). 2800 K is the night value from my old redshift config.
@@ -312,8 +325,29 @@ Suites: apt/stable/
 Signed-By: /etc/apt/keyrings/sublimehq-pub.asc
 EOF
 
+# OnlyOffice Desktop Editors, from OnlyOffice's apt repo (its package doesn't add one)
+install_apt_key https://download.onlyoffice.com/GPG-KEY-ONLYOFFICE \
+  /etc/apt/keyrings/onlyoffice.asc E09CA29F6E178040EF22B4098320CA65CB2DE8E5
+sudo tee /etc/apt/sources.list.d/onlyoffice.sources >/dev/null <<'EOF'
+Types: deb
+URIs: https://download.onlyoffice.com/repo/debian
+Suites: squeeze
+Components: main
+Signed-By: /etc/apt/keyrings/onlyoffice.asc
+EOF
+
 sudo apt update
 sudo apt install -y brave-browser ulauncher flameshot keepassxc sublime-text
+# Without recommends: OnlyOffice recommends ttf-mscorefonts-installer, which stops
+# for Microsoft's license prompt and downloads from SourceForge (a failed download
+# fails the install). The fonts it does require include metric-compatible stand-ins
+# (Carlito for Calibri, Liberation for Arial/Times), so layouts are kept.
+sudo apt install -y --no-install-recommends onlyoffice-desktopeditors
+
+# Brave: turn Rewards off for every profile with Brave's admin policy, which also
+# removes the Rewards button. Brave reads it at startup; brave://policy lists it.
+sudo install -d -m 0755 /etc/brave/policies/managed
+echo '{ "BraveRewardsDisabled": true }' | sudo tee /etc/brave/policies/managed/setup.json >/dev/null
 
 # Ulauncher on Alt+Space. Alt+Space normally opens the window menu, so unbind that
 # first (here for the GNOME session; Compiz's copy is unbound in step 9). On Wayland
@@ -369,6 +403,31 @@ else
   fi
 fi
 
+# Steam, from Ubuntu's multiverse. It needs 32-bit packages, and on NVIDIA the
+# 32-bit build of the installed driver's OpenGL library, or games won't start.
+sudo dpkg --add-architecture i386
+sudo apt update
+steam_pkgs=(steam-installer)
+nvidia_gl=$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 'libnvidia-gl-*' 2>/dev/null |
+  awk '$1 == "ii" && $2 ~ /^libnvidia-gl-[0-9]+$/ {print $2; exit}')
+if [[ -n $nvidia_gl ]]; then
+  steam_pkgs+=("$nvidia_gl:i386")
+fi
+sudo apt install -y "${steam_pkgs[@]}"
+
+# Slack: the newest .deb from Slack's packagecloud repo. The package's daily cron
+# job (/etc/cron.daily/slack) adds and maintains that repo (slack.list, with its
+# keys in /etc/apt/trusted.gpg.d/), so run it once for updates through apt right
+# away. Don't add a second source for the same repo: apt rejects the duplicate
+# ("Conflicting values set for option Signed-By").
+if ! dpkg -s slack-desktop &>/dev/null; then
+  slack_repo=https://packagecloud.io/slacktechnologies/slack/debian
+  slack_deb=$(curl -fsSL "$slack_repo/dists/jessie/main/binary-amd64/Packages" |
+    awk '/^Package: slack-desktop$/ {p=1} p && /^Filename:/ {print $2; p=0}' | sort -V | tail -1)
+  install_deb_from_url "$slack_repo/$slack_deb"
+  sudo /etc/cron.daily/slack
+fi
+
 # ---------------------------------------------------------------------------
 step "9. GNOME Flashback + Compiz (X11 session)"
 sudo apt install -y gnome-session-flashback compiz compiz-gnome compiz-plugins \
@@ -400,6 +459,10 @@ if [[ -f ${lock_uri#file://} ]]; then
 else
   gsettings set org.gnome.desktop.screensaver picture-options 'none'
 fi
+
+# Desktop icons can be dragged anywhere and snap to the grid (Flashback's default
+# auto-arranges them into a sorted grid; 'free' would skip the snapping)
+gsettings set org.gnome.gnome-flashback.desktop.icons placement 'align-icons-to-grid'
 
 # Alt+Space belongs to Ulauncher (step 8): unbind Compiz's window menu from it
 compiz_core=org.compiz.core:/org/compiz/profiles/gnome-flashback/plugins/core/
@@ -468,6 +531,18 @@ for size in 16 22; do
     [[ -e $f ]] && ln -sfn "$f" "$dest/"
   done
 done
+
+# Workspace switcher (bottom panel): color the current cube face. It draws that face
+# in GTK's "selected" state, which Yaru doesn't style, so every face looked the same.
+gtk_css="$HOME/.config/gtk-3.0/gtk.css"
+mkdir -p "${gtk_css%/*}"
+if ! grep -qs 'wnck-pager:selected' "$gtk_css"; then
+  cat >> "$gtk_css" <<'EOF'
+/* Workspace switcher in the Flashback panel: color the current cube face.
+   Yaru leaves it unstyled, so all faces look the same. */
+wnck-pager:selected { background-color: @theme_selected_bg_color; }
+EOF
+fi
 
 # Night light: GNOME computes Night Light, but only GNOME Shell applies it to the
 # screen, so in Flashback nothing gets tinted. gammastep (redshift's successor)

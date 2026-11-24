@@ -123,8 +123,8 @@ echo 'zoxide init fish --cmd j | source' > ~/.config/fish/conf.d/zoxide.fish   #
 echo 'eval "$(zoxide init bash --cmd j)"' >> ~/.bashrc                         # j in bash too
 
 # Aliases, one list per shell (Ubuntu's .bashrc loads ~/.bash_aliases)
-printf "alias cc 'claude --continue'\nalias uu 'sudo apt update && sudo apt upgrade'\nalias ai 'sudo apt install'\n" > ~/.config/fish/conf.d/aliases.fish
-printf "alias cc='claude --continue'\nalias uu='sudo apt update && sudo apt upgrade'\nalias ai='sudo apt install'\n" > ~/.bash_aliases
+printf "alias cc 'claude --continue'\nalias uu 'sudo apt update && sudo apt upgrade'\nalias ai 'sudo apt install'\nalias opn 'xdg-open .'\n" > ~/.config/fish/conf.d/aliases.fish
+printf "alias cc='claude --continue'\nalias uu='sudo apt update && sudo apt upgrade'\nalias ai='sudo apt install'\nalias opn='xdg-open .'\n" > ~/.bash_aliases
 
 sudo chsh -s /usr/bin/fish "$USER"                                  # login shell, next login
 echo com.mitchellh.ghostty.desktop > ~/.config/xdg-terminals.list   # default terminal
@@ -142,6 +142,7 @@ printf 'window-inherit-working-directory = false\nworking-directory = home\n' > 
   | `cc` | `claude --continue`: continue the last Claude Code conversation in this folder |
   | `uu` | `sudo apt update && sudo apt upgrade` |
   | `ai` | `sudo apt install` |
+  | `opn` | `xdg-open .`: open the current folder in Files |
 
   When there's nothing to continue, `claude --continue` starts a new session by itself, so `cc` needs no fallback. I checked that in both interactive and print mode. A fallback written as `claude --continue || claude` would also start a second session whenever a normal session exits with an error. `cc` hides the C compiler only when you type it yourself; `make` and scripts still find `/usr/bin/cc`.
 - **Default terminal**: Ctrl+Alt+T, Nautilus's *Open in Terminal*, and terminal apps all launch through `xdg-terminal-exec`. The user list in `~/.config` overrides Ubuntu's, which lists Ptyxis.
@@ -155,6 +156,9 @@ printf 'window-inherit-working-directory = false\nworking-directory = home\n' > 
 | Keyboard layout | Keyboard → Input Sources | **Spanish (Latin American)** |
 | Block Ctrl+Q | Keyboard → View and Customize Shortcuts → Custom Shortcuts | name *Block Ctrl+Q*, command `true`, shortcut **Ctrl+Q** |
 | Files on Super+E | Keyboard → View and Customize Shortcuts → Custom Shortcuts | name *Files*, command `nautilus --new-window`, shortcut **Super+E** |
+| Volume up / down | Keyboard → View and Customize Shortcuts → Sound and Media | **Super+Delete** / **Super+Insert** |
+| Mic mute | Keyboard → View and Customize Shortcuts → Sound and Media | **Super+F1** (Help's Super+F1 removed) |
+| Play / pause | Keyboard → View and Customize Shortcuts → Sound and Media | **Super+F4** |
 | Night Light | Displays → Night Light | **On**, sunset to sunrise, 2800 K (Ubuntu session only; Flashback uses gammastep, step 9) |
 | Location services | Privacy & Security → Location | **On** (lets Night Light follow local sunset/sunrise) |
 | Automatic suspend | Power → Automatic Suspend | **Plugged in: 20 min** |
@@ -186,6 +190,15 @@ kb=org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/set
 gsettings set "$kb" name    'Files'
 gsettings set "$kb" command 'nautilus --new-window'
 gsettings set "$kb" binding '<Super>e'
+
+# Volume and mic (Super+F1 was Help, so clear that first)
+gsettings set org.gnome.settings-daemon.plugins.media-keys help "[]"
+gsettings set org.gnome.settings-daemon.plugins.media-keys volume-up "['<Super>Delete']"
+gsettings set org.gnome.settings-daemon.plugins.media-keys volume-down "['<Super>Insert']"
+gsettings set org.gnome.settings-daemon.plugins.media-keys mic-mute "['<Super>F1']"
+
+# Super+F4: play/pause
+gsettings set org.gnome.settings-daemon.plugins.media-keys play "['<Super>F4']"
 
 # Night Light
 gsettings set org.gnome.system.location enabled true
@@ -253,7 +266,13 @@ sudo apt install -y /tmp/chrome.deb    # also adds Google's apt repo for updates
 sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg
 sudo curl -fsSLo /etc/apt/sources.list.d/brave-browser-release.sources https://brave-browser-apt-release.s3.brave.com/brave-browser.sources
 sudo apt update && sudo apt install -y brave-browser
+
+# Brave: Rewards off for every profile (Brave's admin policy; restart Brave)
+sudo install -d -m 0755 /etc/brave/policies/managed
+echo '{ "BraveRewardsDisabled": true }' | sudo tee /etc/brave/policies/managed/setup.json
 ```
+
+Brave Rewards is turned off with Brave's `BraveRewardsDisabled` policy, which also removes its toolbar button. Check it in `brave://policy`. The same file can hold Brave's other switches if wanted: `BraveWalletDisabled`, `BraveVPNDisabled`, `BraveNewsDisabled`, and `"BraveAIChatEnabled": false` for Leo.
 
 For system tests, Selenium 4.11+ downloads the matching chromedriver itself, so the old chromedriver install script isn't needed.
 
@@ -295,6 +314,42 @@ Signed-By: /etc/apt/keyrings/sublimehq-pub.asc
 EOF
 sudo apt update && sudo apt install -y keepassxc sublime-text
 ```
+
+### Steam and Slack
+
+Steam comes from Ubuntu's multiverse section as `steam-installer`. It needs 32-bit packages. On NVIDIA it also needs the 32-bit build of the driver's OpenGL library (`libnvidia-gl-595:i386` here), or games won't start. `setup.sh` takes that name from the driver that's installed.
+
+```bash
+sudo dpkg --add-architecture i386 && sudo apt update
+sudo apt install -y steam-installer libnvidia-gl-595:i386
+```
+
+Slack isn't in Ubuntu's repos. Install its `.deb`, then run the daily cron job it ships (`/etc/cron.daily/slack`) once. That job adds Slack's apt repo (`/etc/apt/sources.list.d/slack.list`) and keeps it up to date, so updates come through `apt upgrade`. Don't add a second source for the same repo yourself: apt rejects the duplicate with "Conflicting values set for option Signed-By". The job puts Slack's keys in `/etc/apt/trusted.gpg.d/`, which apt trusts for every repo; that's Slack's own method.
+
+```bash
+# setup.sh picks the newest .deb from https://packagecloud.io/slacktechnologies/slack/debian
+sudo apt install -y ./slack-desktop_<version>_amd64.deb
+sudo /etc/cron.daily/slack
+```
+
+### OnlyOffice (instead of LibreOffice)
+
+OnlyOffice Desktop Editors handles documents, spreadsheets, slides and PDFs in one app. It has a tabbed, Microsoft Office-like interface and the best handling of Word/Excel/PowerPoint files among the free suites. LibreOffice isn't installed on a minimal Ubuntu install, so there's nothing to remove. It's about 1 GB installed.
+
+```bash
+# OnlyOffice's key fingerprint must be E09CA29F6E178040EF22B4098320CA65CB2DE8E5
+sudo curl -fsSLo /etc/apt/keyrings/onlyoffice.asc https://download.onlyoffice.com/GPG-KEY-ONLYOFFICE
+sudo tee /etc/apt/sources.list.d/onlyoffice.sources <<'EOF'
+Types: deb
+URIs: https://download.onlyoffice.com/repo/debian
+Suites: squeeze
+Components: main
+Signed-By: /etc/apt/keyrings/onlyoffice.asc
+EOF
+sudo apt update && sudo apt install -y --no-install-recommends onlyoffice-desktopeditors
+```
+
+It's installed without its recommended packages. Those include `ttf-mscorefonts-installer`, which stops the install for Microsoft's license prompt and downloads the fonts from SourceForge; if that download fails, the install fails. The fonts OnlyOffice requires already include stand-ins with the same metrics: Carlito for Calibri, and Liberation for Arial and Times New Roman. So documents keep their layout. For the exact Microsoft fonts, run `sudo apt install ttf-mscorefonts-installer` separately and accept the license.
 
 ### MEGAsync
 
@@ -349,7 +404,10 @@ Things to know:
 
 - **Black desktop and window trails** mean the wallpaper is missing. Ubuntu sets its wallpaper only for its own session, so Flashback falls back to GNOME's default, `adwaita-d.jxl`, which isn't installed. With no image, the desktop draws nothing and Compiz keeps showing old frames. Setting the wallpaper explicitly (above) fixes it.
 - **A solid black lock screen** (the Password / Switch User / Unlock dialog) is the same problem. Flashback's lock screen draws the *screensaver* background, `org.gnome.desktop.screensaver picture-uri`, which falls back to GNOME's `adwaita-timed.xml`, also not installed. `setup.sh` points it at the desktop's dark-mode wallpaper, like GNOME Shell's lock screen in the Ubuntu session. This isn't the login screen, which is GDM, a separate program with its own theme and a `#222222` background.
+- **Super+S is also the panel's session-menu key.** The indicator applet at the right of the top panel (`indicator-complete`) has Super+S hard-coded to open the Log Out / Suspend menu, with no setting to turn it off. X gives a key to whichever program grabs it first. At login, Compiz loads expo about a second before the panel loads its applets, so expo wins. If Super+S ever opens that menu instead of expo, log out and back in. To fix it without logging out, unload expo, run `systemctl --user stop gnome-panel.service`, load expo again, then start the panel.
+- **Desktop icons can be dragged anywhere, and snap to the grid.** Flashback's default `placement` is `auto-arrange-icons`, which keeps them in a sorted grid. `setup.sh` sets it to `align-icons-to-grid`; `free` would skip the snapping.
 - **A full-color monitor icon at the far right of the panel** is the session indicator (log out, shut down). It asks for ubuntu-mono's `system-*-panel` icons, which Yaru doesn't have. `setup.sh` links them into the panel folders that Yaru's theme index lists, under `~/.local/share/icons/<theme>/`, which gives a flat panel icon. The battery icon next to it is the UPS.
+- **The workspace switcher marks the current face in red.** It draws the current face in GTK's *selected* state, which Yaru doesn't style for this panel, so all four faces looked the same. `setup.sh` adds one rule to `~/.config/gtk-3.0/gtk.css`: `wnck-pager:selected { background-color: @theme_selected_bg_color; }`, the theme's own red. Apps read that file when they start, so restart the panel to see it: `systemctl --user restart gnome-panel.service`.
 - **Night Light doesn't tint the screen in Flashback.** GNOME computes it, but only GNOME Shell applies it to the screen. gammastep (redshift's successor) does it instead, with the values from my old redshift config: 4000 K by day, and 2800 K at 55% brightness at night. Redshift's `transition` is called `fade` now. Day and night follow the actual sunset and sunrise, using the location from GeoClue, whose agent Ubuntu starts in Flashback. No coordinates are stored. The config is `~/.config/gammastep/config.ini`. It's started through `gammastep-indicator`, which adds a tray icon for switching it on and off, by `~/.config/autostart/gammastep.desktop`. That entry has `OnlyShowIn=GNOME-Flashback`, so it never runs in the Ubuntu session. Changing Night Light in Settings doesn't affect Flashback; edit that file instead.
 - **It's X11 only.** Ubuntu's own session is Wayland-only now, but the login screen can still start other X11 sessions, and Flashback is one of them. A future release could drop that support.
 - **Compiz gets no new development.** There have been no upstream releases since 0.9.14.2; Ubuntu keeps rebuilding it because Ubuntu Unity still uses it.

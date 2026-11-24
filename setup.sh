@@ -68,6 +68,14 @@ sudo apt update
 sudo apt install -y curl git
 git config --global user.name  "Rafael Soto"
 git config --global user.email "rafael@osom.so"
+# Aliases and settings from my old setup
+git config --global alias.st status
+git config --global alias.ci commit
+git config --global alias.co checkout
+git config --global alias.su '!git branch --set-upstream-to=origin/$(git branch --show-current)'
+git config --global alias.pr 'pull --rebase'
+git config --global push.default current
+git config --global rebase.autoStash true
 
 # ---------------------------------------------------------------------------
 step "2. Claude Code"
@@ -173,6 +181,24 @@ EOF
 zoxide_bash='eval "$(zoxide init bash --cmd j)"'
 grep -qxF "$zoxide_bash" "$HOME/.bashrc" || echo "$zoxide_bash" >> "$HOME/.bashrc"
 
+# Aliases, one list per shell: fish reads conf.d/aliases.fish, and Ubuntu's
+# .bashrc loads ~/.bash_aliases. cc continues the last Claude Code conversation in
+# this folder. With nothing to continue, `claude --continue` starts a new session
+# by itself, so it needs no fallback (`claude --continue || claude` would also
+# relaunch after any session that exits with an error).
+cat > "$HOME/.config/fish/conf.d/aliases.fish" <<'EOF'
+# Written by setup.sh. Same list as ~/.bash_aliases.
+alias cc 'claude --continue'
+alias uu 'sudo apt update && sudo apt upgrade'
+alias ai 'sudo apt install'
+EOF
+cat > "$HOME/.bash_aliases" <<'EOF'
+# Written by setup.sh. Same list as ~/.config/fish/conf.d/aliases.fish.
+alias cc='claude --continue'
+alias uu='sudo apt update && sudo apt upgrade'
+alias ai='sudo apt install'
+EOF
+
 if [[ $(getent passwd "$USER" | cut -d: -f7) != /usr/bin/fish ]]; then
   sudo chsh -s /usr/bin/fish "$USER"
 fi
@@ -206,11 +232,15 @@ gsettings set org.gnome.desktop.peripherals.keyboard numlock-state true
 # Block Ctrl+Q: a global shortcut that runs `true` swallows the key before apps see it
 add_shortcut block-ctrl-q 'Block Ctrl+Q' 'true' '<Control>q'
 
-# Night Light
+# Super+E opens Files
+add_shortcut files 'Files' 'nautilus --new-window' '<Super>e'
+
+# Night Light, for the Ubuntu (GNOME Shell) session; Flashback uses gammastep
+# (step 9). 2800 K is the night value from my old redshift config.
 gsettings set org.gnome.system.location enabled true
 gsettings set org.gnome.settings-daemon.plugins.color night-light-enabled true
 gsettings set org.gnome.settings-daemon.plugins.color night-light-schedule-automatic true
-gsettings set org.gnome.settings-daemon.plugins.color night-light-temperature 1700
+gsettings set org.gnome.settings-daemon.plugins.color night-light-temperature 2800
 
 # Power: suspend after 20 min idle when plugged in
 gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'suspend'
@@ -322,6 +352,9 @@ elif grep -q '^\[Shortcuts\]' "$fs_ini"; then
 else
   printf '[Shortcuts]\nTYPE_COPY=Return\n' >> "$fs_ini"
 fi
+# Start Flameshot's tray icon at login. This is Flameshot's own switch; it writes
+# ~/.config/autostart/Flameshot.desktop and startupLaunch=true.
+flameshot config --autostart true
 
 # MEGAsync: MEGA's .deb for this Ubuntu version, which also adds MEGA's apt repo
 if dpkg -s megasync &>/dev/null; then
@@ -339,7 +372,7 @@ fi
 # ---------------------------------------------------------------------------
 step "9. GNOME Flashback + Compiz (X11 session)"
 sudo apt install -y gnome-session-flashback compiz compiz-gnome compiz-plugins \
-  compiz-plugins-extra compizconfig-settings-manager
+  compiz-plugins-extra compizconfig-settings-manager gammastep
 
 # Flashback falls back to GNOME's dark wallpaper (adwaita-d.jxl), which Ubuntu
 # doesn't ship. With no image the desktop draws nothing, so Compiz shows black and
@@ -357,8 +390,71 @@ for key in picture-uri picture-uri-dark; do
   fi
 done
 
+# Lock screen: Flashback's lock screen draws the *screensaver* background, which
+# falls back to GNOME's adwaita-timed.xml (also not installed), so it's solid black.
+# Use the desktop's dark-mode wallpaper, like GNOME Shell's lock screen does in the
+# Ubuntu session; a plain color if that file is missing.
+lock_uri=$(gsettings get "$bg" picture-uri-dark | tr -d "'")
+if [[ -f ${lock_uri#file://} ]]; then
+  gsettings set org.gnome.desktop.screensaver picture-uri "$lock_uri"
+else
+  gsettings set org.gnome.desktop.screensaver picture-options 'none'
+fi
+
 # Alt+Space belongs to Ulauncher (step 8): unbind Compiz's window menu from it
-gsettings set org.compiz.core:/org/compiz/profiles/gnome-flashback/plugins/core/ window-menu-key 'Disabled'
+compiz_core=org.compiz.core:/org/compiz/profiles/gnome-flashback/plugins/core/
+gsettings set "$compiz_core" window-menu-key 'Disabled'
+
+# Desktop cube with 4 faces: four viewports side by side, drawn by `cube` and spun
+# by `rotate` (Ctrl+Alt+Left/Right, Ctrl+Alt+drag). `wall` is dropped because it
+# slides between viewports on the same Ctrl+Alt+arrow keys. The plugins' declared
+# order: cube after decor and before scale/switcher/expo; rotate after cube. The
+# rest of the active list is kept as is.
+gsettings set "$compiz_core" hsize 4
+gsettings set "$compiz_core" vsize 1
+plugins=$(gsettings get "$compiz_core" active-plugins | python3 -I -c '
+import ast, sys
+p = [x for x in ast.literal_eval(sys.stdin.read()) if x != "wall"]
+if "cube" not in p:
+    start = p.index("decor") + 1 if "decor" in p else len(p)
+    later = [i for i, x in enumerate(p) if i >= start and x in ("animation", "expo", "scale", "switcher")]
+    p.insert(min(later) if later else len(p), "cube")
+if "rotate" not in p:
+    p.insert(p.index("cube") + 1, "rotate")
+if "switcher" not in p:        # Alt+Tab; must load after cube, so at the end
+    p.append("switcher")
+print(p)')
+gsettings set "$compiz_core" active-plugins "$plugins"
+
+# Compiz's settings library has a "GNOME integration" that reads some Compiz
+# options from GNOME's settings instead, including rotate's keys (taken from
+# GNOME's "switch to workspace" shortcuts). GNOME stores those as lists, the
+# integration expects one string ("compizconfig - Error: Expected string value"),
+# and rotate ends up with no keys at all. Turn the integration off so Compiz uses
+# its own settings. Those are Compiz's defaults (Alt+drag moves a window,
+# Alt+middle-drag resizes it, Alt+right-click opens the window menu, Super+S is
+# expo), except Compiz's own terminal and screenshot keys, which get disabled:
+# they'd run gnome-terminal / gnome-screenshot, which aren't installed, and
+# Flashback already handles Ctrl+Alt+T and Print.
+mkdir -p "$HOME/.config/compiz-1/compizconfig"
+cat > "$HOME/.config/compiz-1/compizconfig/config" <<'EOF'
+[general]
+backend = gsettings
+integration = false
+
+[general_gnome-flashback]
+backend = gsettings
+integration = false
+EOF
+compiz_plugins=/org/compiz/profiles/gnome-flashback/plugins
+for k in run-command-terminal-key run-command-screenshot-key run-command-window-screenshot-key; do
+  gsettings set "org.compiz.gnomecompat:$compiz_plugins/gnomecompat/" "$k" 'Disabled'
+done
+
+# Magnifier (ezoom): Super+mouse wheel zooms in and out. Ubuntu ships every ezoom
+# binding disabled.
+gsettings set "org.compiz.ezoom:$compiz_plugins/ezoom/" zoom-in-button  '<Super>Button4'
+gsettings set "org.compiz.ezoom:$compiz_plugins/ezoom/" zoom-out-button '<Super>Button5'
 
 # Panel icons: the session indicator (far right) asks for ubuntu-mono's
 # system-*-panel icons. Yaru doesn't have them, so it falls back to a full-color
@@ -372,5 +468,35 @@ for size in 16 22; do
     [[ -e $f ]] && ln -sfn "$f" "$dest/"
   done
 done
+
+# Night light: GNOME computes Night Light, but only GNOME Shell applies it to the
+# screen, so in Flashback nothing gets tinted. gammastep (redshift's successor)
+# does it there instead, with the values from my old redshift config, started only
+# in Flashback. gammastep-indicator runs gammastep and adds a tray icon to toggle it.
+mkdir -p "$HOME/.config/gammastep" "$HOME/.config/autostart"
+cat > "$HOME/.config/gammastep/config.ini" <<'EOF'
+; Written by setup.sh. Night light for the GNOME Flashback session, where GNOME's
+; own Night Light is computed but never applied (that's GNOME Shell's job).
+; Values from my old redshift config. Day and night follow the sun at the current
+; location, via GeoClue (Ubuntu starts GeoClue's agent in Flashback).
+[general]
+temp-day=4000
+temp-night=2800
+fade=1
+brightness-day=1.0
+brightness-night=0.55
+location-provider=geoclue2
+adjustment-method=randr
+EOF
+cat > "$HOME/.config/autostart/gammastep.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=Gammastep
+Comment=Night light for GNOME Flashback (written by setup.sh)
+Exec=gammastep-indicator
+OnlyShowIn=GNOME-Flashback;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+EOF
 
 step "Done. Log out, then at the login screen click your name and pick \"GNOME Flashback (Compiz)\" from the gear icon (it's remembered). Open MEGAsync once to log in."

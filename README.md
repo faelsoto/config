@@ -29,7 +29,18 @@ sudo apt update
 sudo apt install -y curl git
 git config --global user.name  "Rafael Soto"
 git config --global user.email "rafael@osom.so"
+
+# Aliases and settings
+git config --global alias.st status
+git config --global alias.ci commit
+git config --global alias.co checkout
+git config --global alias.su '!git branch --set-upstream-to=origin/$(git branch --show-current)'
+git config --global alias.pr 'pull --rebase'
+git config --global push.default current
+git config --global rebase.autoStash true
 ```
+
+`git su` points the current branch at the branch of the same name on origin. From the old setup, `color.ui true` is left out because it's been git's default since 1.8.4, and `pull.default` because it isn't a git setting.
 
 ## 2. Claude Code
 
@@ -111,6 +122,10 @@ echo 'fish_add_path ~/.local/bin'        > ~/.config/fish/conf.d/path.fish     #
 echo 'zoxide init fish --cmd j | source' > ~/.config/fish/conf.d/zoxide.fish   # j <dir>
 echo 'eval "$(zoxide init bash --cmd j)"' >> ~/.bashrc                         # j in bash too
 
+# Aliases, one list per shell (Ubuntu's .bashrc loads ~/.bash_aliases)
+printf "alias cc 'claude --continue'\nalias uu 'sudo apt update && sudo apt upgrade'\nalias ai 'sudo apt install'\n" > ~/.config/fish/conf.d/aliases.fish
+printf "alias cc='claude --continue'\nalias uu='sudo apt update && sudo apt upgrade'\nalias ai='sudo apt install'\n" > ~/.bash_aliases
+
 sudo chsh -s /usr/bin/fish "$USER"                                  # login shell, next login
 echo com.mitchellh.ghostty.desktop > ~/.config/xdg-terminals.list   # default terminal
 
@@ -120,6 +135,15 @@ printf 'window-inherit-working-directory = false\nworking-directory = home\n' > 
 ```
 
 - **`j <dir>`** is [zoxide](https://github.com/ajeetdsouza/zoxide), a maintained successor to autojump. It jumps to the best match among directories you've visited, ranked by how often and how recently. It learns as you `cd`, so it starts empty. It works in both fish and bash, with one shared history. `ji` opens an interactive picker if `fzf` is installed. Note that `which j` prints nothing because `j` is a shell function, not a program on disk; use `type j` to check it.
+- **Aliases**, the same in fish and bash:
+
+  | Alias | Runs |
+  |---|---|
+  | `cc` | `claude --continue`: continue the last Claude Code conversation in this folder |
+  | `uu` | `sudo apt update && sudo apt upgrade` |
+  | `ai` | `sudo apt install` |
+
+  When there's nothing to continue, `claude --continue` starts a new session by itself, so `cc` needs no fallback. I checked that in both interactive and print mode. A fallback written as `claude --continue || claude` would also start a second session whenever a normal session exits with an error. `cc` hides the C compiler only when you type it yourself; `make` and scripts still find `/usr/bin/cc`.
 - **Default terminal**: Ctrl+Alt+T, Nautilus's *Open in Terminal*, and terminal apps all launch through `xdg-terminal-exec`. The user list in `~/.config` overrides Ubuntu's, which lists Ptyxis.
 - **New windows open in `~`**: by default Ghostty opens a new window in the directory of the last window you used. Tabs and splits still do that, which is usually what you want there. After changing the config, press Ctrl+Shift+, in Ghostty to reload it.
 
@@ -130,7 +154,8 @@ printf 'window-inherit-working-directory = false\nworking-directory = home\n' > 
 | Style + accent | Appearance | **Dark**, accent **red** |
 | Keyboard layout | Keyboard → Input Sources | **Spanish (Latin American)** |
 | Block Ctrl+Q | Keyboard → View and Customize Shortcuts → Custom Shortcuts | name *Block Ctrl+Q*, command `true`, shortcut **Ctrl+Q** |
-| Night Light | Displays → Night Light | **On**, sunset to sunrise, warmest (1700 K) |
+| Files on Super+E | Keyboard → View and Customize Shortcuts → Custom Shortcuts | name *Files*, command `nautilus --new-window`, shortcut **Super+E** |
+| Night Light | Displays → Night Light | **On**, sunset to sunrise, 2800 K (Ubuntu session only; Flashback uses gammastep, step 9) |
 | Location services | Privacy & Security → Location | **On** (lets Night Light follow local sunset/sunrise) |
 | Automatic suspend | Power → Automatic Suspend | **Plugged in: 20 min** |
 | Num Lock | *(no UI, GNOME remembers last state)* | **On** at login |
@@ -156,11 +181,17 @@ gsettings set "$kb" name    'Block Ctrl+Q'
 gsettings set "$kb" command 'true'
 gsettings set "$kb" binding '<Control>q'
 
+# Super+E opens Files (same way, path .../custom-keybindings/files/)
+kb=org.gnome.settings-daemon.plugins.media-keys.custom-keybinding:/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/files/
+gsettings set "$kb" name    'Files'
+gsettings set "$kb" command 'nautilus --new-window'
+gsettings set "$kb" binding '<Super>e'
+
 # Night Light
 gsettings set org.gnome.system.location enabled true
 gsettings set org.gnome.settings-daemon.plugins.color night-light-enabled true
 gsettings set org.gnome.settings-daemon.plugins.color night-light-schedule-automatic true
-gsettings set org.gnome.settings-daemon.plugins.color night-light-temperature 1700
+gsettings set org.gnome.settings-daemon.plugins.color night-light-temperature 2800
 
 # Power: suspend after 20 min idle when plugged in
 gsettings set org.gnome.settings-daemon.plugins.power sleep-inactive-ac-type 'suspend'
@@ -245,6 +276,8 @@ In the capture screen, **Enter** copies the selection to the clipboard and close
 TYPE_COPY=Return
 ```
 
+Flameshot's tray icon starts at login. That's Flameshot's own switch, `flameshot config --autostart true`, which writes `~/.config/autostart/Flameshot.desktop`. Captures work without the tray process too.
+
 ### KeePassXC and Sublime Text
 
 KeePassXC comes from its PPA, because Ubuntu's repos are a minor version behind (2.7 vs 2.8). Sublime Text comes from Sublime HQ's own apt repo.
@@ -281,7 +314,7 @@ I like gnome-panel so I can run Compiz. On 26.04 that still works, and everythin
 
 ```bash
 sudo apt install -y gnome-session-flashback compiz compiz-gnome compiz-plugins \
-  compiz-plugins-extra compizconfig-settings-manager
+  compiz-plugins-extra compizconfig-settings-manager gammastep
 
 # Use the Ubuntu session's wallpaper everywhere (see "Black desktop" below).
 # On 26.04 these are warty-final-ubuntu.png and ubuntu-wallpaper-d.png.
@@ -294,10 +327,30 @@ If those files are ever missing, `setup.sh` switches to a plain background color
 
 Log out, click your name on the login screen, then use the gear icon to pick **GNOME Flashback (Compiz)**. The login screen remembers the choice. Set up effects with CompizConfig Settings Manager (`ccsm`).
 
+**Desktop cube, 4 faces.** `setup.sh` sets four viewports side by side (`hsize 4`, `vsize 1`), turns on the `cube` and `rotate` plugins, and turns off `wall`, which uses the same keys to slide between viewports:
+
+| Keys | Does |
+|---|---|
+| Ctrl+Alt+Left / Right | rotate the cube |
+| Ctrl+Alt+Shift+Left / Right | rotate and take the current window along |
+| Ctrl+Alt + drag with the mouse | spin the cube freely |
+| Super+S | overview of all four faces (expo) |
+| Alt+Tab / Ctrl+Alt+Tab | switch windows on this face / on all faces (`switcher` plugin) |
+| Alt + drag / Alt + middle-drag / Alt + right-click | move / resize / window menu |
+| Super + mouse wheel up / down | magnify in / out (`ezoom`; Ubuntu ships its bindings disabled) |
+
+The plugin order follows the plugins' declared dependencies: `cube` after `decor` and before `scale`/`expo`, and `rotate` after `cube`. Everything else in the active list stays as it was.
+
+**Compiz's GNOME integration is turned off.** Compiz's settings library can read some Compiz options from GNOME's settings instead, and rotate's keys are among them, taken from GNOME's "switch to workspace" shortcuts. GNOME stores those as lists, but the integration expects a single string. It logs `compizconfig - Error: Expected string value`, and the cube gets no keys at all. `setup.sh` sets `integration = false` in `~/.config/compiz-1/compizconfig/config`, so Compiz uses its own settings, which are mostly Compiz's defaults (the table above). The exception is Compiz's own terminal and screenshot keys, which are disabled. They would run `gnome-terminal` and `gnome-screenshot`, which aren't installed, so Flashback keeps handling Ctrl+Alt+T and Print.
+
+The plugin list also gets `switcher`, which handles Alt+Tab. Ubuntu's stock Flashback list includes it, but this machine's list didn't. It goes at the end because it has to load after `cube`.
+
 Things to know:
 
 - **Black desktop and window trails** mean the wallpaper is missing. Ubuntu sets its wallpaper only for its own session, so Flashback falls back to GNOME's default, `adwaita-d.jxl`, which isn't installed. With no image, the desktop draws nothing and Compiz keeps showing old frames. Setting the wallpaper explicitly (above) fixes it.
+- **A solid black lock screen** (the Password / Switch User / Unlock dialog) is the same problem. Flashback's lock screen draws the *screensaver* background, `org.gnome.desktop.screensaver picture-uri`, which falls back to GNOME's `adwaita-timed.xml`, also not installed. `setup.sh` points it at the desktop's dark-mode wallpaper, like GNOME Shell's lock screen in the Ubuntu session. This isn't the login screen, which is GDM, a separate program with its own theme and a `#222222` background.
 - **A full-color monitor icon at the far right of the panel** is the session indicator (log out, shut down). It asks for ubuntu-mono's `system-*-panel` icons, which Yaru doesn't have. `setup.sh` links them into the panel folders that Yaru's theme index lists, under `~/.local/share/icons/<theme>/`, which gives a flat panel icon. The battery icon next to it is the UPS.
+- **Night Light doesn't tint the screen in Flashback.** GNOME computes it, but only GNOME Shell applies it to the screen. gammastep (redshift's successor) does it instead, with the values from my old redshift config: 4000 K by day, and 2800 K at 55% brightness at night. Redshift's `transition` is called `fade` now. Day and night follow the actual sunset and sunrise, using the location from GeoClue, whose agent Ubuntu starts in Flashback. No coordinates are stored. The config is `~/.config/gammastep/config.ini`. It's started through `gammastep-indicator`, which adds a tray icon for switching it on and off, by `~/.config/autostart/gammastep.desktop`. That entry has `OnlyShowIn=GNOME-Flashback`, so it never runs in the Ubuntu session. Changing Night Light in Settings doesn't affect Flashback; edit that file instead.
 - **It's X11 only.** Ubuntu's own session is Wayland-only now, but the login screen can still start other X11 sessions, and Flashback is one of them. A future release could drop that support.
 - **Compiz gets no new development.** There have been no upstream releases since 0.9.14.2; Ubuntu keeps rebuilding it because Ubuntu Unity still uses it.
 - **Flashback replaces GNOME Shell**, so gnome-panel takes the place of the dock and top bar, and GNOME extensions don't run. Step 6's settings and the custom shortcuts still apply, and on X11 Ulauncher can grab its own hotkey.

@@ -324,6 +324,8 @@ sudo dpkg --add-architecture i386 && sudo apt update
 sudo apt install -y steam-installer libnvidia-gl-595:i386
 ```
 
+The package is only an installer: the launcher is called **Install Steam**. Opening it asks for confirmation (click **Install**, not Cancel), then downloads the actual Steam client into `~/.steam/debian-installation`. It also replaces the launcher with a **Steam** one in `~/.local/share/applications`. That first run is per user and needs a click, so `setup.sh` leaves it for you.
+
 Slack isn't in Ubuntu's repos. Install its `.deb`, then run the daily cron job it ships (`/etc/cron.daily/slack`) once. That job adds Slack's apt repo (`/etc/apt/sources.list.d/slack.list`) and keeps it up to date, so updates come through `apt upgrade`. Don't add a second source for the same repo yourself: apt rejects the duplicate with "Conflicting values set for option Signed-By". The job puts Slack's keys in `/etc/apt/trusted.gpg.d/`, which apt trusts for every repo; that's Slack's own method.
 
 ```bash
@@ -371,14 +373,13 @@ I like gnome-panel so I can run Compiz. On 26.04 that still works, and everythin
 sudo apt install -y gnome-session-flashback compiz compiz-gnome compiz-plugins \
   compiz-plugins-extra compizconfig-settings-manager gammastep
 
-# Use the Ubuntu session's wallpaper everywhere (see "Black desktop" below).
-# On 26.04 these are warty-final-ubuntu.png and ubuntu-wallpaper-d.png.
-for k in picture-uri picture-uri-dark; do
-  gsettings set org.gnome.desktop.background $k "$(XDG_CURRENT_DESKTOP=ubuntu:GNOME GSETTINGS_BACKEND=memory gsettings get org.gnome.desktop.background $k)"
-done
+# Only if Flashback's wallpaper file is missing (see "Black desktop" below): use
+# the Ubuntu session's instead. On 26.04 that's ubuntu-wallpaper-d.png for dark mode.
+k=picture-uri-dark
+gsettings set org.gnome.desktop.background $k "$(XDG_CURRENT_DESKTOP=ubuntu:GNOME GSETTINGS_BACKEND=memory gsettings get org.gnome.desktop.background $k)"
 ```
 
-If those files are ever missing, `setup.sh` switches to a plain background color (`picture-options 'none'`). A solid color needs no image file, so the bug can't come back.
+`setup.sh` checks before touching the wallpaper or the lock screen picture, and leaves a picture you chose alone as long as its file exists. It reads each key the way Flashback does (`XDG_CURRENT_DESKTOP=GNOME-Flashback:GNOME gsettings get …`), which gives your own pick if you made one and Flashback's default otherwise, then tests the file with `gio info`. Only a missing file is replaced: the desktop gets the Ubuntu session's wallpaper, and the lock screen gets the desktop's dark-mode wallpaper. If the replacement is missing too, it uses a plain color (`picture-options 'none'`), which needs no image file.
 
 Log out, click your name on the login screen, then use the gear icon to pick **GNOME Flashback (Compiz)**. The login screen remembers the choice. Set up effects with CompizConfig Settings Manager (`ccsm`).
 
@@ -402,8 +403,8 @@ The plugin list also gets `switcher`, which handles Alt+Tab. Ubuntu's stock Flas
 
 Things to know:
 
-- **Black desktop and window trails** mean the wallpaper is missing. Ubuntu sets its wallpaper only for its own session, so Flashback falls back to GNOME's default, `adwaita-d.jxl`, which isn't installed. With no image, the desktop draws nothing and Compiz keeps showing old frames. Setting the wallpaper explicitly (above) fixes it.
-- **A solid black lock screen** (the Password / Switch User / Unlock dialog) is the same problem. Flashback's lock screen draws the *screensaver* background, `org.gnome.desktop.screensaver picture-uri`, which falls back to GNOME's `adwaita-timed.xml`, also not installed. `setup.sh` points it at the desktop's dark-mode wallpaper, like GNOME Shell's lock screen in the Ubuntu session. This isn't the login screen, which is GDM, a separate program with its own theme and a `#222222` background.
+- **Black desktop and window trails** mean the wallpaper is missing. Ubuntu sets its wallpaper only for its own session, so Flashback falls back to GNOME's default, `adwaita-d.jxl`, which isn't installed. With no image, the desktop draws nothing and Compiz keeps showing old frames. Setting a wallpaper whose file exists (above) fixes it.
+- **A solid black lock screen** (the Password / Switch User / Unlock dialog) is the same problem. Flashback's lock screen draws the *screensaver* background, `org.gnome.desktop.screensaver picture-uri`, which falls back to GNOME's `adwaita-timed.xml`, also not installed. If that picture is missing, `setup.sh` points it at the desktop's dark-mode wallpaper, like GNOME Shell's lock screen in the Ubuntu session. This isn't the login screen, which is GDM, a separate program with its own theme and a `#222222` background.
 - **Super+S is also the panel's session-menu key.** The indicator applet at the right of the top panel (`indicator-complete`) has Super+S hard-coded to open the Log Out / Suspend menu, with no setting to turn it off. X gives a key to whichever program grabs it first. At login, Compiz loads expo about a second before the panel loads its applets, so expo wins. If Super+S ever opens that menu instead of expo, log out and back in. To fix it without logging out, unload expo, run `systemctl --user stop gnome-panel.service`, load expo again, then start the panel.
 - **Desktop icons can be dragged anywhere, and snap to the grid.** Flashback's default `placement` is `auto-arrange-icons`, which keeps them in a sorted grid. `setup.sh` sets it to `align-icons-to-grid`; `free` would skip the snapping.
 - **A full-color monitor icon at the far right of the panel** is the session indicator (log out, shut down). It asks for ubuntu-mono's `system-*-panel` icons, which Yaru doesn't have. `setup.sh` links them into the panel folders that Yaru's theme index lists, under `~/.local/share/icons/<theme>/`, which gives a flat panel icon. The battery icon next to it is the UPS.

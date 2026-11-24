@@ -433,31 +433,45 @@ step "9. GNOME Flashback + Compiz (X11 session)"
 sudo apt install -y gnome-session-flashback compiz compiz-gnome compiz-plugins \
   compiz-plugins-extra compizconfig-settings-manager gammastep
 
-# Flashback falls back to GNOME's dark wallpaper (adwaita-d.jxl), which Ubuntu
-# doesn't ship. With no image the desktop draws nothing, so Compiz shows black and
-# leaves window trails. Use whatever the Ubuntu session's wallpaper is on this
-# release, for every session. If those files are missing, use a solid color,
-# which needs no file.
+# Wallpaper and lock screen: only step in when the picture is missing. Flashback
+# falls back to GNOME's own defaults, adwaita-d.jxl (desktop, dark mode) and
+# adwaita-timed.xml (lock screen), which Ubuntu doesn't ship. With no image the
+# desktop draws nothing, so Compiz shows black and leaves window trails, and the
+# lock screen is solid black. A picture I picked myself is left alone as long as
+# its file exists.
+#
+# The picture Flashback shows for a key: my own pick if I made one, else
+# Flashback's default.
+flashback_picture() { XDG_CURRENT_DESKTOP=GNOME-Flashback:GNOME gsettings get "$1" "$2" | tr -d "'"; }
+picture_exists() { [[ -n $1 ]] && gio info "$1" &>/dev/null; }
+
 bg=org.gnome.desktop.background
 for key in picture-uri picture-uri-dark; do
-  uri=$(XDG_CURRENT_DESKTOP=ubuntu:GNOME GSETTINGS_BACKEND=memory gsettings get "$bg" "$key" | tr -d "'")
-  if [[ -f ${uri#file://} ]]; then
-    gsettings set "$bg" "$key" "$uri"
+  uri=$(flashback_picture "$bg" "$key")
+  picture_exists "$uri" && continue
+  ubuntu_uri=$(XDG_CURRENT_DESKTOP=ubuntu:GNOME GSETTINGS_BACKEND=memory gsettings get "$bg" "$key" | tr -d "'")
+  if picture_exists "$ubuntu_uri"; then
+    echo "Wallpaper $uri is missing; using Ubuntu's, $ubuntu_uri." >&2
+    gsettings set "$bg" "$key" "$ubuntu_uri"
   else
-    echo "Ubuntu's wallpaper ($uri) is missing; using a solid background color instead." >&2
+    echo "Wallpaper $uri is missing, and so is Ubuntu's; using a solid background color." >&2
     gsettings set "$bg" picture-options 'none'
   fi
 done
 
-# Lock screen: Flashback's lock screen draws the *screensaver* background, which
-# falls back to GNOME's adwaita-timed.xml (also not installed), so it's solid black.
-# Use the desktop's dark-mode wallpaper, like GNOME Shell's lock screen does in the
-# Ubuntu session; a plain color if that file is missing.
-lock_uri=$(gsettings get "$bg" picture-uri-dark | tr -d "'")
-if [[ -f ${lock_uri#file://} ]]; then
-  gsettings set org.gnome.desktop.screensaver picture-uri "$lock_uri"
-else
-  gsettings set org.gnome.desktop.screensaver picture-options 'none'
+# Lock screen: Flashback's draws the *screensaver* background. If that's missing,
+# use the desktop's dark-mode wallpaper, like GNOME Shell's lock screen does in
+# the Ubuntu session, or a plain color if that's missing too.
+ss=org.gnome.desktop.screensaver
+lock_uri=$(flashback_picture "$ss" picture-uri)
+if ! picture_exists "$lock_uri"; then
+  dark_uri=$(flashback_picture "$bg" picture-uri-dark)
+  if picture_exists "$dark_uri"; then
+    echo "Lock screen picture $lock_uri is missing; using the desktop's, $dark_uri." >&2
+    gsettings set "$ss" picture-uri "$dark_uri"
+  else
+    gsettings set "$ss" picture-options 'none'
+  fi
 fi
 
 # Desktop icons can be dragged anywhere and snap to the grid (Flashback's default
